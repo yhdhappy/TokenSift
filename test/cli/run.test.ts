@@ -1,0 +1,215 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
+import { run } from "../../src/cli/run.js";
+
+const cwd = fileURLToPath(new URL("../fixtures/cli", import.meta.url));
+const configsDir = fileURLToPath(new URL("../fixtures/cli/configs", import.meta.url));
+
+let scratchDir: string | undefined;
+afterEach(() => {
+  if (scratchDir) rmSync(scratchDir, { recursive: true, force: true });
+  scratchDir = undefined;
+});
+
+describe("run", () => {
+  it("prints the version on --version", async () => {
+    const result = await run(["--version"], cwd, "9.9.9");
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toBe("9.9.9");
+  });
+
+  it("prints the version on -v", async () => {
+    const result = await run(["-v"], cwd, "9.9.9");
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toBe("9.9.9");
+  });
+
+  it("prints help on --help", async () => {
+    const result = await run(["--help"], cwd);
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("Commands:");
+    expect(result.output).toContain("token-sift init");
+  });
+
+  it("prints help on -h", async () => {
+    const result = await run(["-h"], cwd);
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("Commands:");
+  });
+
+  it("prints help when invoked with no arguments at all", async () => {
+    const result = await run([], cwd);
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("Commands:");
+  });
+
+  it("exits 0 on a clean file with no findings", async () => {
+    const result = await run(["prompts/top.md", "--model", "gpt-4o"], cwd);
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain("no findings");
+  });
+
+  it("exits 2 when any finding is error severity", async () => {
+    const result = await run(["prompts/big-base64.md", "--model", "gpt-4o"], cwd);
+    expect(result.exitCode).toBe(2);
+    expect(result.output).toContain("base64-blob");
+  });
+
+  it("stays at exit 0 for warnings when --max-warnings isn't set", async () => {
+    const result = await run(["prompts/two-uuids.md", "--model", "gpt-4o"], cwd);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("exits 1 when --max-warnings is exceeded", async () => {
+    const result = await run(
+      ["prompts/two-uuids.md", "--model", "gpt-4o", "--max-warnings", "1"],
+      cwd,
+    );
+    expect(result.exitCode).toBe(1);
+  });
+
+  it("--format json produces a single valid JSON document", async () => {
+    const result = await run(["prompts/top.md", "--model", "gpt-4o", "--format", "json"], cwd);
+    expect(() => JSON.parse(result.output)).not.toThrow();
+  });
+
+  it("reports the deduplicated savings for the dedup sample consistently", async () => {
+    const args = ["prompts/dedup-sample.md", "--model", "gpt-4o"];
+    const textResult = await run(args, cwd);
+    const jsonResult = await run([...args, "--format", "json"], cwd);
+    const parsed = JSON.parse(jsonResult.output);
+    const report = parsed.results[0];
+    const textTotal = Number(textResult.output.match(/total addressable waste ~= (\d+) tokens/)?.[1]);
+    const rawFindingSavings = report.findings.reduce(
+      (sum: number, finding: { tokens: { saved: number } }) => sum + finding.tokens.saved,
+      0,
+    );
+
+    expect(textTotal).toBe(report.summary.totalWasteTokens);
+    expect(report.summary.totalWasteTokens).toBeLessThanOrEqual(report.summary.totalTokens);
+    expect(report.summary.totalWasteTokens).toBeLessThan(rawFindingSavings);
+  });
+
+  it("--format github emits a workflow command with a real line number", async () => {
+    const result = await run(
+      ["prompts/two-uuids.md", "--model", "gpt-4o", "--format", "github"],
+      cwd,
+    );
+    expect(result.output).toMatch(
+      /^::warning file=prompts\/two-uuids\.md,title=uuid-bloat,line=\d+,endLine=\d+::/m,
+    );
+  });
+
+  it("--format markdown produces a PR-comment-ready summary", async () => {
+    const result = await run(
+      ["prompts/two-uuids.md", "--model", "gpt-4o", "--format", "markdown"],
+      cwd,
+    );
+    expect(result.output).toContain("## Token Sift");
+    expect(result.output).toContain("| prompts/two-uuids.md | uuid-bloat |");
+  });
+
+  it("--format sarif produces a valid SARIF 2.1.0 log", async () => {
+    const result = await run(
+      ["prompts/two-uuids.md", "--model", "gpt-4o", "--format", "sarif"],
+      cwd,
+    );
+    const parsed = JSON.parse(result.output);
+    expect(parsed.version).toBe("2.1.0");
+    expect(parsed.runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri).toBe(
+      "prompts/two-uuids.md",
+    );
+  });
+
+  it("surfaces the analyzed file's relative path on every finding's loc.input.path", async () => {
+    const result = await run(
+      ["prompts/two-uuids.md", "--model", "gpt-4o", "--format", "json"],
+      cwd,
+    );
+    const parsed = JSON.parse(result.output);
+    expect(parsed.results[0].findings.length).toBeGreaterThan(0);
+    for (const finding of parsed.results[0].findings) {
+      expect(finding.loc.input.path).toBe("prompts/two-uuids.md");
+    }
+  });
+
+  it("--fix --write rewrites a real file on disk", async () => {
+    scratchDir = mkdtempSync(join(tmpdir(), "token-sift-cli-"));
+    const file = join(scratchDir, "prompt.md");
+    writeFileSync(file, "the customer said hello​world");
+
+    const result = await run([file, "--model", "gpt-4o", "--fix", "--write"], scratchDir);
+    expect(result.exitCode).toBe(0);
+    expect(readFileSync(file, "utf8")).toBe("the customer said helloworld");
+  });
+
+  it("fails the whole run upfront when --write hits a JSON input, before writing anything", async () => {
+    scratchDir = mkdtempSync(join(tmpdir(), "token-sift-cli-"));
+    const mdFile = join(scratchDir, "prompt.md");
+    const jsonFile = join(scratchDir, "data.json");
+    writeFileSync(mdFile, "the customer said “hello”");
+    writeFileSync(jsonFile, '{"a":1}');
+
+    const result = await run([mdFile, jsonFile, "--model", "gpt-4o", "--write"], scratchDir);
+    expect(result.exitCode).toBe(3);
+    expect(result.output).toContain("--write doesn't support JSON");
+    expect(readFileSync(mdFile, "utf8")).toBe("the customer said “hello”");
+  });
+
+  it("auto-discovers token-sift.config.json and doesn't require --model on the command line", async () => {
+    const result = await run(["../prompts/two-uuids.md"], configsDir);
+    expect(result.output).not.toContain("--model is required");
+  });
+
+  it("uses the config file's rule severity override (uuid-bloat=error)", async () => {
+    const result = await run(["../prompts/two-uuids.md", "--model", "gpt-4o"], configsDir);
+    expect(result.exitCode).toBe(2);
+    expect(result.output).toContain("error");
+  });
+
+  it("a CLI flag overrides the config file's value", async () => {
+    const result = await run(
+      ["../prompts/two-uuids.md", "--model", "gpt-4o", "--rules", "uuid-bloat=warn"],
+      configsDir,
+    );
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("exits 3 with a clear message when no files match", async () => {
+    const result = await run(["prompts/nothing-here-*.md", "--model", "gpt-4o"], cwd);
+    expect(result.exitCode).toBe(3);
+    expect(result.output).toContain("no files matched");
+  });
+
+  it("--update-baseline records current token counts, no regression on the first run", async () => {
+    scratchDir = mkdtempSync(join(tmpdir(), "token-sift-cli-"));
+    const file = join(scratchDir, "prompt.md");
+    writeFileSync(file, "a short static prompt with no findings");
+
+    const result = await run([file, "--model", "gpt-4o", "--update-baseline"], scratchDir);
+    expect(result.exitCode).toBe(0);
+
+    const baseline = JSON.parse(
+      readFileSync(join(scratchDir, ".token-sift", "baseline.json"), "utf8"),
+    );
+    expect(baseline["prompt.md"]).toBeGreaterThan(0);
+  });
+
+  it("flags baseline-regression once a file grows past a recorded baseline", async () => {
+    scratchDir = mkdtempSync(join(tmpdir(), "token-sift-cli-"));
+    const file = join(scratchDir, "prompt.md");
+    writeFileSync(file, "a short static prompt");
+    await run([file, "--model", "gpt-4o", "--update-baseline"], scratchDir);
+
+    writeFileSync(
+      file,
+      "a short static prompt that has grown a great deal longer than it used to be, with plenty of extra words piled on",
+    );
+    const result = await run([file, "--model", "gpt-4o"], scratchDir);
+    expect(result.exitCode).toBe(2);
+    expect(result.output).toContain("baseline-regression");
+  });
+});

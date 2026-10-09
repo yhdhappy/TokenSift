@@ -1,0 +1,47 @@
+import type { Encoder } from "./encoder.js";
+import type { PricingOverride, VolumeOptions } from "./pricing.js";
+import type { RepeatedSubstringIndex } from "./services/repeated-substring.js";
+import type { Finding, InputRef, JsonRegion, Message, Severity, Slot, TokenView } from "./types.js";
+
+export interface ProviderProfile {
+  messageOverheadTokens?: number;
+  cacheMinTokens?: number;
+}
+
+export interface AnalysisContext {
+  text: string;
+  inputRef: InputRef;
+  /** the model string passed to analyze(); encoder-mismatch compares this against ctx.encoder */
+  model: string;
+  encoder: Encoder;
+  tokenView: TokenView;
+  jsonRegions: JsonRegion[];
+  repeated: RepeatedSubstringIndex;
+  slots: Slot[];
+  messages?: Message[];
+  /** leading-whitespace char count per line, index-aligned with text.split("\n") */
+  indentMap: number[];
+  /** overheads/cache constants per provider; no curated data yet, always undefined for now */
+  providerProfile?: ProviderProfile;
+  /** whether rules that can autofix should attach a Finding.fix; defaults to true */
+  autofix: boolean;
+  /** declared total token budget for budget-exceeded; undefined means no budget configured */
+  budget?: number;
+  /** previously recorded token count for baseline-regression; undefined means no baseline recorded */
+  baseline?: number;
+  /** per-model price overrides, so a rule can price its own custom cost (e.g. cache-buster's rate delta) the same way analyze()'s central computeCost does */
+  pricingOverrides?: Record<string, PricingOverride>;
+  /** request volume, so a rule's custom cost can project atVolume like computeCost does */
+  volume?: VolumeOptions;
+}
+
+export interface Rule {
+  id: string;
+  defaultSeverity: Severity;
+  why: string;
+  check(ctx: AnalysisContext, severity: Severity): Finding[];
+}
+
+export function defineRule(rule: Rule): Rule {
+  return rule;
+}

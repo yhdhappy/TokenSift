@@ -1,0 +1,59 @@
+export type OpenAiFamily = "o200k_base" | "cl100k_base";
+
+// gpt-tokenizer ships per-model subpaths with the correct bundled BPE ranks,
+// so we only import one representative model per family (ranks are shared
+// within a family). This list is intentionally small; extend it as rules
+// need more models.
+export const OPENAI_MODEL_FAMILY: Record<string, OpenAiFamily> = {
+  "gpt-4o": "o200k_base",
+  "gpt-4o-mini": "o200k_base",
+  "gpt-4.1": "o200k_base",
+  "gpt-4.1-mini": "o200k_base",
+  "gpt-4.1-nano": "o200k_base",
+  "chatgpt-4o-latest": "o200k_base",
+  "gpt-5": "o200k_base",
+  "gpt-5-mini": "o200k_base",
+  "gpt-5-nano": "o200k_base",
+  "gpt-5-pro": "o200k_base",
+  "gpt-5-chat-latest": "o200k_base",
+  "gpt-5-codex": "o200k_base",
+  "gpt-5.1": "o200k_base",
+  "gpt-5.2": "o200k_base",
+  "gpt-5.2-pro": "o200k_base",
+  "gpt-5.3-codex": "o200k_base",
+  "gpt-5.4": "o200k_base",
+  "gpt-5.4-pro": "o200k_base",
+  "gpt-5.4-mini": "o200k_base",
+  "gpt-5.4-nano": "o200k_base",
+  "gpt-5.5": "o200k_base",
+  "gpt-5.5-pro": "o200k_base",
+  "gpt-5.6-sol": "o200k_base",
+  "gpt-5.6-terra": "o200k_base",
+  "gpt-5.6-luna": "o200k_base",
+  "gpt-6-sol": "o200k_base",
+  "gpt-6-luna": "o200k_base",
+  "gpt-6.1-sol": "o200k_base",
+  "gpt-6-astra": "o200k_base",
+  o1: "o200k_base",
+  "o1-mini": "o200k_base",
+  "o1-pro": "o200k_base",
+  o3: "o200k_base",
+  "o3-mini": "o200k_base",
+  "o3-pro": "o200k_base",
+  "o4-mini": "o200k_base",
+  "codex-mini-latest": "o200k_base",
+  "computer-use-preview": "o200k_base",
+  "gpt-4-turbo": "cl100k_base",
+  "gpt-4": "cl100k_base",
+  "gpt-3.5-turbo": "cl100k_base",
+};
+
+export function resolveOpenAiFamily(model: string): OpenAiFamily {
+  const family = OPENAI_MODEL_FAMILY[model];
+  if (!family) {
+    throw new Error(
+      `unknown OpenAI model '${model}'; supported: ${Object.keys(OPENAI_MODEL_FAMILY).join(", ")}`,
+    );
+  }
+  return family;
+}

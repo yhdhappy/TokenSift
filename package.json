@@ -1,0 +1,118 @@
+{
+  "name": "token-sift",
+  "version": "1.8.0",
+  "description": "Token Sift: token-efficiency linter for LLM prompts and payloads",
+  "keywords": ["llm", "tokens", "linter", "openai", "anthropic", "prompt-engineering"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yhdhappy/TokenSift.git"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./matchers": {
+      "import": {
+        "types": "./dist/matchers.d.ts",
+        "default": "./dist/matchers.js"
+      },
+      "require": {
+        "types": "./dist/matchers.d.cts",
+        "default": "./dist/matchers.cjs"
+      }
+    },
+    "./encoders/o200k": {
+      "import": {
+        "types": "./dist/encoders/o200k.d.ts",
+        "default": "./dist/encoders/o200k.js"
+      },
+      "require": {
+        "types": "./dist/encoders/o200k.d.cts",
+        "default": "./dist/encoders/o200k.cjs"
+      }
+    },
+    "./encoders/cl100k": {
+      "import": {
+        "types": "./dist/encoders/cl100k.d.ts",
+        "default": "./dist/encoders/cl100k.js"
+      },
+      "require": {
+        "types": "./dist/encoders/cl100k.d.cts",
+        "default": "./dist/encoders/cl100k.cjs"
+      }
+    },
+    "./rules/*": {
+      "import": {
+        "types": "./dist/rules/*.d.ts",
+        "default": "./dist/rules/*.js"
+      },
+      "require": {
+        "types": "./dist/rules/*.d.cts",
+        "default": "./dist/rules/*.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "matchers": ["./dist/matchers.d.ts"],
+      "encoders/o200k": ["./dist/encoders/o200k.d.ts"],
+      "encoders/cl100k": ["./dist/encoders/cl100k.d.ts"],
+      "rules/*": ["./dist/rules/*.d.ts"]
+    }
+  },
+  "bin": {
+    "token-sift": "./dist/cli.js"
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "gpt-tokenizer": "^3.4.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "publint": "publint",
+    "attw": "attw --pack .",
+    "changeset": "changeset",
+    "changeset:version": "changeset version && biome check --write .",
+    "pricing:update": "node scripts/update-pricing.mjs && biome check --write src/pricing-data.ts",
+    "prepublishOnly": "pnpm build"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@biomejs/biome": "^1.9.4",
+    "@changesets/cli": "^2.27.11",
+    "@types/node": "^26.1.1",
+    "fast-check": "^4.9.0",
+    "publint": "^0.2.12",
+    "tsup": "^8.5.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "pnpm": {
+    "overrides": {
+      "human-id": "1.0.2"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+node_modules
+dist
+*.log
+.DS_Store
+coverage
+spec.md
+bun.lock
+bun.lockb
+test/data-rows.test.ts
+RULE_AUDIT.md
+smoke-test

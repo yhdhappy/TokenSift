@@ -1,0 +1,115 @@
+export type Severity = "error" | "warn" | "info";
+export type Confidence = "exact" | "estimate";
+
+export interface Money {
+  amount: number;
+  currency: "USD";
+}
+
+export type InputKind = "string" | "messages" | "payload";
+
+export interface InputRef {
+  kind: InputKind;
+  path?: string;
+}
+
+export type Role = "system" | "user" | "assistant" | "tool";
+
+export interface TextPart {
+  type: "text";
+  text: string;
+}
+
+export type ContentPart = TextPart | { type: string; [key: string]: unknown };
+
+export interface Message {
+  role: Role;
+  content: string | ContentPart[];
+  /** slots from a dyn()/t()-built content string, so cache-buster can see dynamic spans inside a message, not just a top-level TaggedPrompt */
+  slots?: Slot[];
+}
+
+export interface ToolSchema {
+  name: string;
+  description?: string;
+  parameters?: unknown;
+}
+
+export interface Payload {
+  model?: string;
+  system?: string;
+  messages?: Message[];
+  tools?: ToolSchema[];
+}
+
+export type AnalysisInput = string | Message[] | Payload | TaggedPrompt;
+
+export interface Fix {
+  description: string;
+  range: [number, number];
+  replacement: string;
+}
+
+export interface Finding {
+  ruleId: string;
+  severity: Severity;
+  message: string;
+  why: string;
+  loc: { input: InputRef; range: [number, number]; messageIndex?: number };
+  tokens: { current: number; afterFix: number; saved: number };
+  cost?: { perCall: Money; per1000Calls: Money; atVolume?: Money };
+  fix?: Fix;
+  suggestion?: string;
+  confidence: Confidence;
+}
+
+export interface TokenSpan {
+  text: string;
+  id: number;
+  byteRange: [number, number];
+}
+
+export type TokenClass =
+  | "word"
+  | "punct"
+  | "whitespace"
+  | "digit-fragment"
+  | "hex-fragment"
+  | "other";
+
+export interface TokenView {
+  text: string;
+  tokens: TokenSpan[];
+  count: number;
+  stats: {
+    charsPerToken: number;
+    whitespaceShare: number;
+    classHistogram: Record<TokenClass, number>;
+    perLineCosts: number[];
+  };
+}
+
+export interface JsonRegion {
+  range: [number, number];
+  text: string;
+  value: unknown;
+}
+
+export interface RepeatedSpan {
+  text: string;
+  occurrences: [number, number][];
+  tokenCost: number;
+}
+
+export interface Slot {
+  name: string;
+  range: [number, number];
+  /** whatever content actually filled this slot: a real value at request time, or a representative example when analyzing offline */
+  value?: string;
+  maxTokens?: number;
+}
+
+export interface TaggedPrompt {
+  text: string;
+  slots: Slot[];
+}

@@ -1,0 +1,202 @@
+# Token Sift
+
+## 1.8.0
+
+### Minor Changes
+
+- 622e6ab: Add tokensift/rules/* subpath exports so an individual rule can be imported without pulling in the full catalog (and encoder-mismatch's encoder dependency) through the main entry point
+
+## 1.7.1
+
+### Patch Changes
+
+- 7a3e81e: Added support for gpt6 models, as well as some missed gpt5 variants
+
+## 1.7.0
+
+### Minor Changes
+
+- b80ff51: Register gpt-5.6-sol, gpt-5.6-terra, and gpt-5.6-luna (o200k_base) and refresh bundled pricing data
+
+## 1.6.0
+
+### Minor Changes
+
+- d683506: Register gpt-6-astra (o200k_base) and refresh bundled pricing data
+
+## 1.5.0
+
+### Minor Changes
+
+- 63f7e15: Add below-cache-minimum rule (D2): flags a dyn()-marked prompt whose static prefix is shorter than the model's real minimum cacheable length, so it can never be cached regardless of ordering
+
+## 1.4.0
+
+### Minor Changes
+
+- 7364a55: Add cache-buster rule: flags dynamic content placed before a large static block, which blocks that block from ever being cached under provider prompt caching's exact-prefix matching
+
+## 1.3.0
+
+### Minor Changes
+
+- 54dc794: Add --version/-v and --help/-h flags to the CLI, and print help when invoked with no arguments
+
+## 1.2.1
+
+### Patch Changes
+
+- 0ddf3b8: Fix base64-blob false positive on long CamelCase identifiers
+
+## 1.2.0
+
+### Minor Changes
+
+- 6eab963: List supported models when model is ommitted from pricing
+
+## 1.1.0
+
+### Minor Changes
+
+- 0957f1e: Add support for all current GPT models
+
+## 1.0.1
+
+### Patch Changes
+
+- 380894f: Improve html-whitesace rule
+
+## 0.18.0
+
+### Minor Changes
+
+- 09e21f6: Add encoder-mismatch rule
+
+## 0.17.1
+
+### Patch Changes
+
+- 9aad1e4: Improve dyn usage
+
+## 0.17.0
+
+### Minor Changes
+
+- d6bf88d: Add htmlWhitespace rule
+
+## 0.16.1
+
+### Patch Changes
+
+- 31d1dd5: Update readme to mention support for providers
+
+## 0.16.0
+
+### Minor Changes
+
+- 6d02106: add sarif reporter
+
+## 0.15.0
+
+### Minor Changes
+
+- e2bf3b9: Add markdown and github reporters
+
+## 0.14.0
+
+### Minor Changes
+
+- 93079b0: Add init command to start the config file
+
+## 0.13.0
+
+### Minor Changes
+
+- 64d91fe: - Add budget library function, similar to the command line one
+  - builtInRules automatically apply when no rules are provided when running analyze
+  - Add ability to provide custom rules
+
+## 0.12.1
+
+### Patch Changes
+
+- ea7b073: Add property tests for applyFixes
+
+## 0.12.0
+
+### Minor Changes
+
+- 7f3ad74: Add property-based testing
+
+## 0.11.0
+
+### Minor Changes
+
+- a72d068: Improve accuracy of multiple rules
+
+## 0.10.0
+
+### Minor Changes
+
+- 0eb1a8a: Fixes over-reporting due to malformed JSON parsing inaccuracies
+
+## 0.9.1
+
+### Patch Changes
+
+- 63492f6: Just a readme update
+
+## 0.9.0
+
+### Minor Changes
+
+- 191216d: Add cost savings to the analysis, fix repeated-block
+
+## 0.8.1
+
+### Patch Changes
+
+- ec017ac: Updated README.md
+
+## 0.8.0
+
+### Minor Changes
+
+- 2a75db8: Adds support for anthropic token estimation via calibrated token counts
+
+## 0.7.0
+
+### Minor Changes
+
+- fc14847: Add matchers for testing
+
+## 0.6.0
+
+### Minor Changes
+
+- 9b55709: Adds budget and check cli commands, and regression rule
+
+## 0.5.0
+
+### Minor Changes
+
+- 74f41ec: Adds a CLI tokensift command to analyze files and globs
+
+## 0.4.0
+
+### Minor Changes
+
+- 5e0b39f: Added more rules, add budget, and add ability to disable autofix
+
+## 0.3.0
+
+### Minor Changes
+
+- c41423c: Added 5 more rules: base64-blob, high-entropy-string, digit-fragmentation, duplicate-message-content, filler
+
+## 0.2.0
+
+### Minor Changes
+
+- 79d1d01: Added more rules for saving tokens
+

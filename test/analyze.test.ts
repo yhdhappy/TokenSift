@@ -1,0 +1,501 @@
+import { describe, expect, it } from "vitest";
+import { analyze } from "../src/analyze.js";
+import type { Encoder } from "../src/encoder.js";
+import type { Rule } from "../src/rule.js";
+import { builtinRules } from "../src/rules/index.js";
+import { dyn, t } from "../src/tag.js";
+import type { Message, TokenClass } from "../src/types.js";
+
+// A minimal rule that just flags every occurrence of the word "please",
+// enough to prove findings flow through analyze() without pulling in a real
+// rule (uuid-bloat lands in its own commit).
+const flagsPlease: Rule = {
+  id: "flags-please",
+  defaultSeverity: "info",
+  why: "test fixture rule",
+  check(ctx, severity) {
+    const idx = ctx.text.indexOf("please");
+    if (idx === -1) return [];
+    return [
+      {
+        ruleId: "flags-please",
+        severity,
+        message: "found 'please'",
+        why: "test fixture rule",
+        loc: { input: ctx.inputRef, range: [idx, idx + 6] },
+        tokens: { current: 1, afterFix: 0, saved: 1 },
+        confidence: "exact",
+      },
+    ];
+  },
+};
+
+describe("analyze", () => {
+  it("tokenizes a plain string and runs the configured rules", () => {
+    const report = analyze("could you please help me", {
+      model: "gpt-4o",
+      rules: [flagsPlease],
+    });
+
+    expect(report.findings).toHaveLength(1);
+    expect(report.byRule["flags-please"]).toHaveLength(1);
+    expect(report.summary.totalTokens).toBeGreaterThan(0);
+    expect(report.summary.totalWasteTokens).toBe(1);
+  });
+
+  it("does not double-count totalWasteTokens when two rules claim savings on the exact same range", () => {
+    const makeOverlapRule = (id: string, saved: number): Rule => ({
+      id,
+      defaultSeverity: "info",
+      why: "test fixture rule",
+      check(ctx, severity) {
+        return [
+          {
+            ruleId: id,
+            severity,
+            message: `${id} claims ${saved}`,
+            why: "test fixture rule",
+            loc: { input: ctx.inputRef, range: [0, 10] },
+            tokens: { current: saved + 1, afterFix: 1, saved },
+            confidence: "exact",
+          },
+        ];
+      },
+    });
+
+    // Padding makes the input token count exceed the asserted savings, so Math.min does not clamp it.
+    const report = analyze("word ".repeat(1200), {
+      model: "gpt-4o",
+      rules: [makeOverlapRule("rule-a", 30), makeOverlapRule("rule-b", 50)],
+    });
+
+    expect(report.findings).toHaveLength(2);
+    // both findings independently report their own real savings...
+    expect(report.findings[0]?.tokens.saved).toBe(30);
+    expect(report.findings[1]?.tokens.saved).toBe(50);
+    // ...but the aggregate only counts the larger overlapping claim once, not 30 + 50.
+    expect(report.summary.totalWasteTokens).toBe(50);
+  });
+
+  it("sums totalWasteTokens across findings whose ranges don't overlap", () => {
+    const makeRule = (id: string, range: [number, number], saved: number): Rule => ({
+      id,
+      defaultSeverity: "info",
+      why: "test fixture rule",
+      check(ctx, severity) {
+        return [
+          {
+            ruleId: id,
+            severity,
+            message: id,
+            why: "test fixture rule",
+            loc: { input: ctx.inputRef, range },
+            tokens: { current: saved + 1, afterFix: 1, saved },
+            confidence: "exact",
+          },
+        ];
+      },
+    });
+
+    // Padding makes the input token count exceed the asserted savings, so Math.min does not clamp it.
+    const report = analyze("word ".repeat(1200), {
+      model: "gpt-4o",
+      rules: [makeRule("rule-a", [0, 5], 10), makeRule("rule-b", [20, 25], 15)],
+    });
+
+    expect(report.summary.totalWasteTokens).toBe(25);
+  });
+
+  it("counts totalWasteTokens once for a narrow fix nested inside a broader one", () => {
+    const makeRule = (id: string, range: [number, number], saved: number): Rule => ({
+      id,
+      defaultSeverity: "info",
+      why: "test fixture rule",
+      check(ctx, severity) {
+        return [
+          {
+            ruleId: id,
+            severity,
+            message: id,
+            why: "test fixture rule",
+            loc: { input: ctx.inputRef, range },
+            tokens: { current: saved + 1, afterFix: 1, saved },
+            confidence: "exact",
+          },
+        ];
+      },
+    });
+
+    // Padding makes the input token count exceed the asserted savings, so Math.min does not clamp it.
+    // Reason for changed expectation: overlapping savings claims form one conservative region.
+    const report = analyze("word ".repeat(1200), {
+      model: "gpt-4o",
+      rules: [makeRule("outer-rule", [0, 100], 1000), makeRule("inner-rule", [10, 20], 50)],
+    });
+
+    expect(report.summary.totalWasteTokens).toBe(1000);
+  });
+
+  it("defaults to every builtin rule when rules isn't passed", () => {
+    const uuid = "550e8400-e29b-41d4-a716-446655440000";
+    const report = analyze(`Ticket ${uuid}`, { model: "gpt-4o" });
+    expect(report.findings.some((f) => f.ruleId === "uuid-bloat")).toBe(true);
+    expect(Object.keys(report.byRule).length).toBeGreaterThan(1);
+  });
+
+  it("returns no findings when rules: [] is passed explicitly", () => {
+    const report = analyze("anything at all", { model: "gpt-4o", rules: [] });
+    expect(report.findings).toEqual([]);
+    expect(report.byRule).toEqual({});
+  });
+
+  it("splits static and dynamic budget for a tagged prompt", () => {
+    const prompt = t`You are a support agent.
+Ticket: ${dyn("ticketBody", { value: "my billing failed twice this month" })}`;
+
+    const report = analyze(prompt, { model: "gpt-4o" });
+    expect(report.summary.dynamicBudget).toBeGreaterThan(0);
+    expect(report.summary.staticTokens).toBe(
+      report.summary.totalTokens - report.summary.dynamicBudget,
+    );
+  });
+
+  // reports ctx.slots' ranges as findings, so tests can assert exact rebased positions
+  // through the public Report shape rather than reaching into analyze()'s internals
+  const reportsSlotRanges: Rule = {
+    id: "reports-slot-ranges",
+    defaultSeverity: "info",
+    why: "test fixture rule",
+    check(ctx) {
+      return ctx.slots.map((slot) => ({
+        ruleId: "reports-slot-ranges",
+        severity: "info" as const,
+        message: `slot '${slot.name}' at [${slot.range[0]},${slot.range[1]}]`,
+        why: "test fixture rule",
+        loc: { input: ctx.inputRef, range: slot.range },
+        tokens: { current: 0, afterFix: 0, saved: 0 },
+        confidence: "exact" as const,
+      }));
+    },
+  };
+
+  it("rebases a message's own slots to their real position in the joined text (Message[] input)", () => {
+    const built = t`ticket id: ${dyn("id", { value: "TCK-1" })}`;
+    const messages: Message[] = [
+      { role: "system", content: "You are terse." },
+      { role: "user", content: built.text, slots: built.slots },
+    ];
+
+    const report = analyze(messages, { model: "gpt-4o", rules: [reportsSlotRanges] });
+    expect(report.findings).toHaveLength(1);
+    const [from, to] = report.findings[0]!.loc.range;
+
+    const joined = ["You are terse.", built.text].join("\n");
+    expect(joined.slice(from, to)).toBe("TCK-1");
+  });
+
+  it("rebases slots correctly in Payload input, matching filter(Boolean) when system is absent", () => {
+    const built = t`user says: ${dyn("msg", { value: "hello there" })}`;
+    const messages: Message[] = [{ role: "user", content: built.text, slots: built.slots }];
+
+    const withSystem = analyze(
+      { system: "be terse", messages },
+      { model: "gpt-4o", rules: [reportsSlotRanges] },
+    );
+    const withoutSystem = analyze({ messages }, { model: "gpt-4o", rules: [reportsSlotRanges] });
+
+    const [fromWith, toWith] = withSystem.findings[0]!.loc.range;
+    const joinedWith = ["be terse", built.text].join("\n");
+    expect(joinedWith.slice(fromWith, toWith)).toBe("hello there");
+
+    const [fromWithout, toWithout] = withoutSystem.findings[0]!.loc.range;
+    // no system block means the message starts at offset 0, not after a missing "\n" gap --
+    // exactly what filter(Boolean) already guaranteed before this change
+    expect(built.text.slice(fromWithout, toWithout)).toBe("hello there");
+    expect(fromWithout).toBe(built.text.indexOf("hello there"));
+  });
+
+  it("joins Message[] content for analysis and keeps the messages on the context", () => {
+    const messages: Message[] = [
+      { role: "system", content: "You are terse." },
+      { role: "user", content: "please summarize this" },
+    ];
+
+    const report = analyze(messages, { model: "gpt-4o", rules: [flagsPlease] });
+    expect(report.findings).toHaveLength(1);
+  });
+
+  it("applyFixes applies every fix from every rule when no ruleIds filter is given", () => {
+    const upperFirstWord: Rule = {
+      id: "upper-first-word",
+      defaultSeverity: "info",
+      why: "test fixture rule",
+      check(ctx, severity) {
+        return [
+          {
+            ruleId: "upper-first-word",
+            severity,
+            message: "uppercase the first word",
+            why: "test fixture rule",
+            loc: { input: ctx.inputRef, range: [0, 3] },
+            tokens: { current: 1, afterFix: 1, saved: 0 },
+            fix: { description: "uppercase", range: [0, 3], replacement: "THE" },
+            confidence: "exact",
+          },
+        ];
+      },
+    };
+    const upperLastWord: Rule = {
+      id: "upper-last-word",
+      defaultSeverity: "info",
+      why: "test fixture rule",
+      check(ctx, severity) {
+        const start = ctx.text.length - 3;
+        return [
+          {
+            ruleId: "upper-last-word",
+            severity,
+            message: "uppercase the last word",
+            why: "test fixture rule",
+            loc: { input: ctx.inputRef, range: [start, ctx.text.length] },
+            tokens: { current: 1, afterFix: 1, saved: 0 },
+            fix: { description: "uppercase", range: [start, ctx.text.length], replacement: "DOG" },
+            confidence: "exact",
+          },
+        ];
+      },
+    };
+
+    const report = analyze("the quick fox", {
+      model: "gpt-4o",
+      rules: [upperFirstWord, upperLastWord],
+    });
+
+    expect(report.applyFixes()).toBe("THE quick DOG");
+    expect(report.applyFixes({ ruleIds: ["upper-first-word"] })).toBe("THE quick fox");
+    expect(report.applyFixes({ ruleIds: [] })).toBe("the quick fox");
+  });
+
+  it("applyFixes is a no-op when nothing has a fix", () => {
+    const report = analyze("could you please help me", {
+      model: "gpt-4o",
+      rules: [flagsPlease],
+    });
+    expect(report.applyFixes()).toBe("could you please help me");
+  });
+
+  it("applyFixes keeps the first of two overlapping fixes, including a same-start tie", () => {
+    const overlapping: Rule = {
+      id: "overlapping",
+      defaultSeverity: "info",
+      why: "test fixture rule",
+      check(ctx, severity) {
+        return [
+          {
+            ruleId: "overlapping",
+            severity,
+            message: "first, wins",
+            why: "test fixture rule",
+            loc: { input: ctx.inputRef, range: [0, 3] },
+            tokens: { current: 1, afterFix: 1, saved: 0 },
+            fix: { description: "a", range: [0, 3], replacement: "AAA" },
+            confidence: "exact",
+          },
+          {
+            ruleId: "overlapping",
+            severity,
+            message: "same start, loses the tie",
+            why: "test fixture rule",
+            loc: { input: ctx.inputRef, range: [0, 5] },
+            tokens: { current: 1, afterFix: 1, saved: 0 },
+            fix: { description: "b", range: [0, 5], replacement: "BBBBB" },
+            confidence: "exact",
+          },
+          {
+            ruleId: "overlapping",
+            severity,
+            message: "overlaps the first fix's range, loses",
+            why: "test fixture rule",
+            loc: { input: ctx.inputRef, range: [2, 6] },
+            tokens: { current: 1, afterFix: 1, saved: 0 },
+            fix: { description: "c", range: [2, 6], replacement: "CCCC" },
+            confidence: "exact",
+          },
+        ];
+      },
+    };
+
+    const report = analyze("abcdefgh", { model: "gpt-4o", rules: [overlapping] });
+    expect(report.applyFixes()).toBe("AAAdefgh");
+  });
+
+  it("attaches Finding.cost when pricing data exists for the model", () => {
+    const report = analyze("could you please help me", {
+      model: "gpt-4o",
+      rules: [flagsPlease],
+    });
+    expect(report.findings[0]?.cost?.perCall.amount).toBeGreaterThan(0);
+    expect(report.findings[0]?.cost?.perCall.currency).toBe("USD");
+    expect(report.findings[0]?.cost?.per1000Calls.amount).toBeCloseTo(
+      report.findings[0]!.cost!.perCall.amount * 1000,
+    );
+    expect(report.findings[0]?.cost?.atVolume).toBeUndefined();
+  });
+
+  it("projects Finding.cost.atVolume when volume is configured", () => {
+    const report = analyze("could you please help me", {
+      model: "gpt-4o",
+      rules: [flagsPlease],
+      volume: { requestsPerDay: 1000 },
+    });
+    expect(report.findings[0]?.cost?.atVolume?.amount).toBeGreaterThan(0);
+  });
+
+  it("leaves Finding.cost undefined for a model with no pricing data", () => {
+    const emptyHistogram: Record<TokenClass, number> = {
+      word: 0,
+      punct: 0,
+      whitespace: 0,
+      "digit-fragment": 0,
+      "hex-fragment": 0,
+      other: 0,
+    };
+    const stubEncoder: Encoder = {
+      id: "custom-model",
+      family: "custom",
+      mode: "estimate",
+      countTokens: () => 1,
+      tokenize: () => ({
+        text: "",
+        tokens: [],
+        count: 1,
+        stats: {
+          charsPerToken: 1,
+          whitespaceShare: 0,
+          classHistogram: emptyHistogram,
+          perLineCosts: [1],
+        },
+      }),
+    };
+
+    const report = analyze("please help", {
+      model: "custom-model",
+      rules: [flagsPlease],
+      encoder: stubEncoder,
+    });
+    expect(report.findings[0]?.cost).toBeUndefined();
+  });
+
+  it("report.summary.cost sums every finding's cost", () => {
+    const flagsTwoWords: Rule = {
+      id: "flags-two-words",
+      defaultSeverity: "info",
+      why: "test fixture rule",
+      check(ctx, severity) {
+        return ["please", "help"].map((word) => {
+          const idx = ctx.text.indexOf(word);
+          return {
+            ruleId: "flags-two-words",
+            severity,
+            message: `found '${word}'`,
+            why: "test fixture rule",
+            loc: { input: ctx.inputRef, range: [idx, idx + word.length] },
+            tokens: { current: 1, afterFix: 0, saved: 1 },
+            confidence: "exact" as const,
+          };
+        });
+      },
+    };
+
+    const report = analyze("could you please help me", {
+      model: "gpt-4o",
+      rules: [flagsTwoWords],
+    });
+
+    expect(report.findings).toHaveLength(2);
+    const expectedPerCall =
+      report.findings[0]!.cost!.perCall.amount + report.findings[1]!.cost!.perCall.amount;
+    expect(report.summary.cost?.perCall.amount).toBeCloseTo(expectedPerCall);
+    expect(report.summary.cost?.per1000Calls.amount).toBeCloseTo(expectedPerCall * 1000);
+  });
+
+  it("report.summary.cost.atVolume is only set when every finding has one", () => {
+    const report = analyze("could you please help me", {
+      model: "gpt-4o",
+      rules: [flagsPlease],
+      volume: { requestsPerDay: 1000 },
+    });
+    expect(report.summary.cost?.atVolume?.amount).toBeGreaterThan(0);
+  });
+
+  it("report.summary.cost is undefined when nothing has pricing data", () => {
+    const report = analyze("summarize the ticket", { model: "gpt-4o" });
+    expect(report.findings).toHaveLength(0);
+    expect(report.summary.cost).toBeUndefined();
+  });
+
+  it("gives rules an indent map, one entry per line", () => {
+    let seen: number[] = [];
+    const capturesIndent: Rule = {
+      id: "captures-indent",
+      defaultSeverity: "info",
+      why: "test fixture rule",
+      check(ctx) {
+        seen = ctx.indentMap;
+        return [];
+      },
+    };
+
+    analyze("no indent\n    four spaces\n\teight-ish (tab)", {
+      model: "gpt-4o",
+      rules: [capturesIndent],
+    });
+
+    expect(seen).toEqual([0, 4, 1]);
+  });
+
+  it("counts a Payload's tools toward totalTokens, not just system/messages", () => {
+    const withoutTools = analyze(
+      { system: "You are an agent.", tools: [] },
+      { model: "gpt-4o", rules: [] },
+    );
+    const withTools = analyze(
+      {
+        system: "You are an agent.",
+        tools: [{ name: "send_email", description: "Send an email", parameters: { to: "string" } }],
+      },
+      { model: "gpt-4o", rules: [] },
+    );
+
+    expect(withTools.summary.totalTokens).toBeGreaterThan(withoutTools.summary.totalTokens);
+  });
+
+  it("lets pretty-json/row-json fire on a Payload's tools, same as any other embedded JSON", () => {
+    const rows = [
+      { name: "a", description: "d", parameters: {} },
+      { name: "b", description: "d", parameters: {} },
+      { name: "c", description: "d", parameters: {} },
+    ];
+    const report = analyze(
+      { system: "You are an agent.", tools: rows },
+      { model: "gpt-4o", rules: builtinRules },
+    );
+    expect(report.findings.some((f) => f.ruleId === "row-json")).toBe(true);
+  });
+
+  it("surfaces options.path on every finding's loc.input.path", () => {
+    const report = analyze("id: 550e8400-e29b-41d4-a716-446655440000", {
+      model: "gpt-4o",
+      path: "prompts/support.md",
+    });
+    expect(report.findings.length).toBeGreaterThan(0);
+    for (const finding of report.findings) {
+      expect(finding.loc.input.path).toBe("prompts/support.md");
+    }
+  });
+
+  it("leaves loc.input.path undefined when no path is given, same as before", () => {
+    const report = analyze("id: 550e8400-e29b-41d4-a716-446655440000", { model: "gpt-4o" });
+    expect(report.findings[0]?.loc.input.path).toBeUndefined();
+  });
+});
