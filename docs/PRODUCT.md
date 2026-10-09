@@ -17,7 +17,7 @@ Token Sift 是一个本地运行的命令行工具和 JavaScript/TypeScript 库�
 安装：
 
 ```sh
-npm install --global token-sift
+npm install --global @yuhond/token-sift
 ```
 
 初始化当前项目并分析提示词文件：
@@ -43,7 +43,7 @@ token-sift check prompts/*.md --model gpt-4o
 在代码中使用：
 
 ```ts
-import { analyze } from "token-sift";
+import { analyze } from "@yuhond/token-sift";
 
 const result = analyze(prompt, { model: "gpt-4o" });
 ```

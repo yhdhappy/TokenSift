@@ -1,26 +1,26 @@
 # Token Sift
 
-[![npm version](https://img.shields.io/npm/v/token-sift)](https://www.npmjs.com/package/token-sift)
+[![npm version](https://img.shields.io/npm/v/@yuhond/token-sift)](https://www.npmjs.com/package/@yuhond/token-sift)
 [![CI](https://img.shields.io/github/actions/workflow/status/yhdhappy/TokenSift/ci.yml?branch=main)](https://github.com/yhdhappy/TokenSift/actions/workflows/ci.yml)
-[![npm downloads](https://img.shields.io/npm/dm/token-sift)](https://www.npmjs.com/package/token-sift)
-[![license](https://img.shields.io/npm/l/token-sift)](./LICENSE)
+[![npm downloads](https://img.shields.io/npm/dm/@yuhond/token-sift)](https://www.npmjs.com/package/@yuhond/token-sift)
+[![license](https://img.shields.io/npm/l/@yuhond/token-sift)](./LICENSE)
 
 Token Sift is a local command-line tool and library for finding avoidable token use in prompts, message arrays, and tool schemas.
 
-**Token Sift is a separate project based on `ritenv/tokensift` (MIT).** It uses the new `token-sift` package and command name, and keeps its configuration and local data separate from the original project in `token-sift.config.json` and `.token-sift/`.
+**Token Sift is a separate project based on `ritenv/tokensift` (MIT).** It uses the new `@yuhond/token-sift` npm package and `token-sift` command name, and keeps its configuration and local data separate from the original project in `token-sift.config.json` and `.token-sift/`.
 
 Analysis runs locally. Only the price-refresh and calibration commands use the network, and only when you explicitly run them. No code or prompts are ever uploaded.
 
 ## Install
 
 ```sh
-npm install --global token-sift
+npm install --global @yuhond/token-sift
 ```
 
 Or add it to a project:
 
 ```sh
-npm install token-sift
+npm install @yuhond/token-sift
 ```
 
 ## Quick start
@@ -43,7 +43,7 @@ Token Sift reports findings with the affected text, severity, token counts, sugg
 Use the library from JavaScript or TypeScript:
 
 ```ts
-import { analyze } from "token-sift";
+import { analyze } from "@yuhond/token-sift";
 
 const report = analyze("Repeated instruction. Repeated instruction.", {
   model: "gpt-4o",
@@ -107,4 +107,4 @@ Analysis runs locally. Only the price-refresh and calibration commands use the n
 
 ## License and source
 
-Based on ritenv/tokensift (MIT). Token Sift changes the project name and executable to `token-sift`, and isolates configuration and local data as `token-sift.config.json` and `.token-sift/`. See [LICENSE](./LICENSE), [LICENSE-THIRD-PARTY.md](./LICENSE-THIRD-PARTY.md), and [DESIGN.md](./DESIGN.md).
+Based on ritenv/tokensift (MIT). Token Sift changes the project name to Token Sift, the npm package to `@yuhond/token-sift`, and the executable to `token-sift`, and isolates configuration and local data as `token-sift.config.json` and `.token-sift/`. See [LICENSE](./LICENSE), [LICENSE-THIRD-PARTY.md](./LICENSE-THIRD-PARTY.md), and [DESIGN.md](./DESIGN.md).

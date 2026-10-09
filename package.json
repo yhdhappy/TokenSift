@@ -1,5 +1,5 @@
 {
-  "name": "token-sift",
+  "name": "@yuhond/token-sift",
   "version": "1.8.0",
   "description": "Token Sift: token-efficiency linter for LLM prompts and payloads",
   "keywords": ["llm", "tokens", "linter", "openai", "anthropic", "prompt-engineering"],
